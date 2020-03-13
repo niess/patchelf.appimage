@@ -1,0 +1,7 @@
+[Desktop Entry]
+Categories=Utility;
+Type=Application
+Icon=patchelf
+Exec=patchelf
+Name=patchelf
+Terminal=true

@@ -1,0 +1,87 @@
+name: AppImage
+on: [push, pull_request]
+
+jobs:
+  Build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, i686]
+
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/checkout@v2
+      with:
+        repository: NixOS/patchelf
+        path: patchelf
+
+    - name: Compile
+      run: |
+        PRE_CMD=""
+        if [[ "${{ matrix.arch }}" == "i686" ]]; then
+          PRE_CMD="linux32"
+        fi
+        SCRIPT=$(cat <<-END
+          ${PRE_CMD}
+          set -ex
+          cd /pwd/patchelf
+          ./bootstrap.sh
+          ./configure --prefix="/pwd/AppDir/usr"
+          make
+          make install
+          strip "/pwd/AppDir/usr/bin/patchelf"
+        END
+        )
+        docker run --mount type=bind,source=$(pwd),target=/pwd                 \
+                   quay.io/pypa/manylinux1_${{ matrix.arch }} /bin/bash -c     \
+                   "${SCRIPT}"
+
+    - name: Package
+      run: |
+        wget -cq https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${{ matrix.arch }}.AppImage
+        chmod u+x appimagetool-${{ matrix.arch }}.AppImage
+        ln -s patchelf.png AppDir/.DirIcon
+        ln -s usr/bin/patchelf AppDir/AppRun
+        if [[ ${{ matrix.arch }} == "i686" ]]; then
+          SCRIPT=$(cat <<-END
+            linux32
+            apt-get update
+            apt-get install -y file
+            set -ex
+            trap 'rm -rf /pwd/squashfs-root' EXIT
+            cd /pwd
+            ./appimagetool-i686.AppImage --appimage-extract &> /dev/null
+            ./squashfs-root/AppRun AppDir
+        END
+          )
+          docker run --mount type=bind,source=$(pwd),target=/pwd               \
+                     i686/ubuntu /bin/bash -c "${SCRIPT}"
+        else
+          ./appimagetool-${{ matrix.arch }}.AppImage AppDir
+        fi
+        echo "::set-env name=PATCHELF_APPIMAGE::$(ls patchelf-*.AppImage)"
+
+    - uses: actions/upload-artifact@v1
+      with:
+        name: appimages
+        path: ${{ env.PATCHELF_APPIMAGE }}
+
+  Release:
+    needs: Build
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/download-artifact@v1
+      with:
+        name: appimages
+
+    - run: ls -lha appimages
+
+    - name: Release
+      uses: marvinpinto/action-automatic-releases@latest
+      with:
+        automatic_release_tag: rolling
+        title: Rolling release
+        files: appimages/patchelf-*.AppImage
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
