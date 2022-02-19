@@ -1,5 +1,8 @@
 name: AppImage
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - master
 
 jobs:
   Build:
@@ -7,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x86_64, i686]
+        arch: [x86_64, i686, aarch64]
 
     steps:
     - uses: actions/checkout@v2
@@ -15,6 +18,14 @@ jobs:
       with:
         repository: NixOS/patchelf
         path: patchelf
+        ref: 0.13.1
+
+    - name: Set up QEMU
+      if: contains(matrix.arch, 'aarch64')
+      uses: docker/setup-qemu-action@v1
+      with:
+        image: tonistiigi/binfmt:latest
+        platforms: arm64
 
     - name: Compile
       run: |
@@ -33,34 +44,30 @@ jobs:
           strip "/pwd/AppDir/usr/bin/patchelf"
         END
         )
+        if [[ "${{ matrix.arch }}" == "aarch64" ]]; then
+          MANYLINUX=manylinux2014_aarch64
+        else
+          MANYLINUX=manylinux1_${{ matrix.arch }}
+        fi
         docker run --mount type=bind,source=$(pwd),target=/pwd                 \
-                   quay.io/pypa/manylinux1_${{ matrix.arch }} /bin/bash -c     \
+                   quay.io/pypa/${MANYLINUX} /bin/bash -c                      \
                    "${SCRIPT}"
 
     - name: Package
       run: |
-        wget -cq https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${{ matrix.arch }}.AppImage
-        chmod u+x appimagetool-${{ matrix.arch }}.AppImage
+        wget -cq https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+        chmod u+x appimagetool-x86_64.AppImage
         ln -s patchelf.png AppDir/.DirIcon
         ln -s usr/bin/patchelf AppDir/AppRun
-        if [[ ${{ matrix.arch }} == "i686" ]]; then
-          SCRIPT=$(cat <<-END
-            linux32
-            apt-get update
-            apt-get install -y file
-            set -ex
-            trap 'rm -rf /pwd/squashfs-root' EXIT
-            cd /pwd
-            ./appimagetool-i686.AppImage --appimage-extract &> /dev/null
-            ./squashfs-root/AppRun AppDir
-        END
-          )
-          docker run --mount type=bind,source=$(pwd),target=/pwd               \
-                     i686/ubuntu /bin/bash -c "${SCRIPT}"
+        if [[ ${{ matrix.arch }} == "x86_64" ]]; then
+          RUNTIME_FILE=
         else
-          ./appimagetool-${{ matrix.arch }}.AppImage AppDir
+          wget -cq https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${{ matrix.arch }}.AppImage
+          chmod u+x appimagetool-${{ matrix.arch }}.AppImage
+          RUNTIME_FILE="--runtime-file appimagetool-${{ matrix.arch }}.AppImage"
         fi
-        echo "::set-env name=PATCHELF_APPIMAGE::$(ls patchelf-*.AppImage)"
+        ./appimagetool-x86_64.AppImage ${RUNTIME_FILE} AppDir
+        echo "PATCHELF_APPIMAGE=$(ls patchelf-*.AppImage)" >> $GITHUB_ENV
 
     - uses: actions/upload-artifact@v1
       with:
