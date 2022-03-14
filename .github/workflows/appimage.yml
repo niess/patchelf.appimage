@@ -15,6 +15,7 @@ jobs:
       with:
         repository: NixOS/patchelf
         path: patchelf
+        ref: 0.13.1
 
     - name: Compile
       run: |
@@ -39,7 +40,7 @@ jobs:
 
     - name: Package
       run: |
-        wget -cq https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${{ matrix.arch }}.AppImage
+        wget -cq https://github.com/AppImage/AppImageKit/releases/download/12/appimagetool-${{ matrix.arch }}.AppImage
         chmod u+x appimagetool-${{ matrix.arch }}.AppImage
         ln -s patchelf.png AppDir/.DirIcon
         ln -s usr/bin/patchelf AppDir/AppRun
@@ -60,7 +61,7 @@ jobs:
         else
           ./appimagetool-${{ matrix.arch }}.AppImage AppDir
         fi
-        echo "::set-env name=PATCHELF_APPIMAGE::$(ls patchelf-*.AppImage)"
+        echo "PATCHELF_APPIMAGE=$(ls patchelf-*.AppImage)" >> $GITHUB_ENV
 
     - uses: actions/upload-artifact@v1
       with:
